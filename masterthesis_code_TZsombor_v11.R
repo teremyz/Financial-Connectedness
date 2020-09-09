@@ -1,11 +1,11 @@
-library(readxl)
+#library(readxl)
 library(YieldCurve)
 library(RTransferEntropy)
 library(future)
 library(glue)
 #library(corrplot)
 plan(multiprocess)
-library(ggplot2)
+#library(ggplot2)
 library(xts)
 library(qgraph)
 library(lmtest)
@@ -16,7 +16,7 @@ library(vars)
 library(pracma)
 library(tseries)
 library(Hmisc)
-library(dplyr)
+#library(dplyr)
 library(tidyverse)
 require(gridExtra)
 library(grid)
@@ -25,19 +25,49 @@ library(MTS)
 #####################################################################################
 #######################  Creating Input and output variables  #######################
 
-#creting output variables
-output <- vector(mode="list", length=0)
-output$dynamic_anal = list()
+input = list()
+output = list()
 
-#creating input variables
-input <- vector(mode="list", length=0)
-#Path to commodities excel
-input$path_commodities <- "C:\\Users\\Hp\\Desktop\\Master Thesis\\data\\com.xlsx"
-#Peth to yield curve data
-input$path_yieldcurve = "C:\\Users\\Hp\\Desktop\\Master Thesis\\data\\yields.xlsx"
+#Loading Functions
+source("C:/Users/Hp/Desktop/Master Thesis/code rewamp/read_data.R")
+#Define variables
+input = data_reading_params(input)
 
-#Maturuities of term structure
-input$DL_maturity <- c(3,6,seq(12,120,by=12),180,240,360)
+#Read the data 
+output$raw_commodities<- read_excel_allsheets(input$path_commodities)
+output$raw_yield <- read_excel_allsheets(input$path_yieldcurve)
+
+
+#Loading Functions
+source("C:/Users/Hp/Desktop/Master Thesis/code rewamp/transform_data_functions.R")
+#Define variables to get only Mondays from the dataset
+day_for_filt = 5
+str_point = 5
+
+#Convert to xts format
+output$raw_commodities<- xts_converter(output$raw_commodities)
+output$raw_yield <- xts_converter(output$raw_yield)
+
+#Filtering to get every Monday
+output$raw_commodities <- lapply(output$raw_commodities, filtering_df, str_point = str_point, n = day_for_filt)
+output$raw_yield <- lapply(output$raw_yield, filtering_df, str_point = str_point, n = day_for_filt)
+
+
+#Diebold-Lee factor decomposition  
+source("C:/Users/Hp/Desktop/Master Thesis/code rewamp/DL_functions.R")
+#Define params
+input = DL_input(input)
+#It transforms yield curves to DL factors
+output$DL_coeff = iter_NS_3(output$raw_yield, input$DL)
+
+
+
+
+
+
+
+
+
 # Inputs for Transfer Entrophy: number of lags, type, shuffles, nboot, p-value
 input$TE <- list(lx=1, ly=1, q=1, entropy="Shannon",shuffles=25,nboot=100,seed=NULL, na.rm=TRUE, p=0.05, burn=10)
 # Lambda for Diebold-Lee factors. It is a given value based on Diebold-Li (2006)
@@ -60,87 +90,10 @@ input$split_dates = list(start0="2000-01-10", end0="2007-06-30",
 ##############################################################################################################
 #####################################   Functions   ######################################################
 
-#Read all excel sheet from one document and transform into df that is in a list
-read_excel_allsheets <- function(filename, tibble = FALSE) {
-  # I prefer straight data.frames
-  # but if you like tidyverse tibbles (the default with read_excel)
-  # then just pass tibble = TRUE
-  sheets <- readxl::excel_sheets(filename)
-  x <- lapply(sheets, function(X) readxl::read_excel(filename, sheet = X))
-  if(!tibble) x <- lapply(x, as.data.frame)
-  names(x) <- sheets
-  x
-}
 
-#Convert data frames of a list into xts file
-xts_converter <- function(data){
-  for (i in 1:length(data)){
-    data[[i]]=xts(data[[i]][,-1], order.by = as.POSIXct(data[[i]][,1],format="%Y-%m-%d UTC"))
-  }
-  data
-}
 
-# It can filter every n-th element of the data
-filtering_df <- function(df, str_point, n){
-  df.new = df[seq(str_point, nrow(df), n), ]
-  df.new
-}
 
-#It iterates the latest function on an elements of a list that contains data frames
-iterate_filt <- function(df_list, str_point, n){
-  for (i in 1:length(df_list)){
-    df_list[[i]] = filtering_df(df_list[[i]],  str_point, n)
-  }
-  df_list
-}
 
-#Nelson Siegel Decomposition of term structure to 3 factors (level, slope, curvature)
-nelson_siegel_3 <- function(rates,maturity,lambda){
-  df <- data.frame(matrix(ncol = 3, nrow = 0))
-  beta2 = (1-exp(-lambda*maturity))/(lambda*maturity)
-  beta3 = (1-exp(-lambda*maturity))/(lambda*maturity)-exp(-lambda*maturity)
-  for (i in 1:nrow(rates)){
-    yt = rates[i,]
-    linear <- lm(t(yt) ~ beta2 + beta3)
-    df[i,] = linear[["coefficients"]]
-    
-    }
-  df$dates = as.POSIXct(index(rates),format="%Y-%m-%d UTC")
-  df = xts(df[,1:3],order.by = df$dates)
-  colnames(df) <- c("beta 1", "beta 2", "beta 3")
-  df
-}
-
-#Nelson Siegel Decomposition of term structure to 3 factors (level, slope)
-nelson_siegel_2 <- function(rates,maturity,lambda){
-  df <- data.frame(matrix(ncol = 2, nrow = 0))
-  beta2 = (1-exp(-lambda*maturity))/(lambda*maturity)
-  for (i in 1:nrow(rates)){
-    yt = rates[i,]
-    linear <- lm(t(yt) ~ beta2)
-    df[i,] = linear[["coefficients"]]
-  }
-  df$dates = as.POSIXct(index(rates),format="%Y-%m-%d UTC")
-  df = xts(df[,1:2],order.by = df$dates)
-  colnames(df) <- c("beta 1", "beta 2")
-  df
-}
-
-#Iterates NS functions through a list
-#You can make a decision about 2 or 3 factors decomposition with the optional parmeter
-iterate_NS<-function(rates,maturity,lambda,two_param=F){
-  list_df=list()
-  for (i in 1:length(rates)){
-    if (two_param){
-      df = nelson_siegel_2(rates[[i]],maturity,lambda)
-      }else{
-      df = nelson_siegel_3(rates[[i]],maturity,lambda)
-    }
-    list_df[[i]]=df
-  }
-  names(list_df) = c(names(rates))
-  list_df
-  }
 
 ###################################################################################
 ###############################   Descriptive statistics  ##########################
