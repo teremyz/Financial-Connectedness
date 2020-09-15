@@ -61,6 +61,66 @@ input = DL_input(input)
 output$DL_coeff = iter_NS_3(output$raw_yield, input$DL)
 
 
+source("C:/Users/Hp/Desktop/Master Thesis/code rewamp/func_desc_stats.R")
+input = desc_stat_par(input)
+#Getting the ACF of all time series about Diebold-Lee factors
+#The number of columns are equal to the desierd lag number
+#The number of rows are equal to the 3 betas times the number of countries
+output$acf = acf_val(output[["DL_coeff"]], input$acf)
+
+#It gives back the rewsult of stationarity tests
+output[['stationarity']][['test1_comm']] = stationarity_test(output[["raw_commodities"]][["crude"]])
+output[['stationarity']][['test1_DL']] = lapply(output[["DL_coeff"]], stationarity_test)
+
+
+source("C:/Users/Hp/Desktop/Master Thesis/code rewamp/func_diff.R")
+#Differentiate the time series if their sign based on ADF is smaller than a given sign. level
+output[["raw_commodities"]][["crude"]] = apply_diff(output[["raw_commodities"]][["crude"]])
+#It converts factors to statinary ts if they are not stationary based on ADF
+output[["DL_coeff"]] = lapply(output[["DL_coeff"]], apply_diff)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#It tests time series of factors to stationarity by PP, KPSS, ADF test
+factor_stat_test<-function(df_list){
+  df = data.frame(matrix(ncol=21,nrow = 3))
+  c= 1
+  for (i in 1:length(df_list)){
+    for (j in 1:3){ 
+      df[1,c] = pp.test(df_list[[i]][complete.cases(df_list[[i]]), j])[['p.value']] 
+      df[2,c] = kpss.test(df_list[[i]][complete.cases(df_list[[i]]), j])[['p.value']] 
+      df[3,c] = adf.test(df_list[[i]][complete.cases(df_list[[i]]), j])[['p.value']]
+      c = 1 + c
+    }
+    
+  }
+  df
+}
+
+
+output[['DL_stat_test']][['before']] = factor_stat_test(output[["DL_coeff"]])
+
+
+#It converts factors to statinary ts if they are not stationary based on ADF
+output[["DL_coeff"]]=factor_diff(output$DL_coeff)
 
 
 
