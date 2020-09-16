@@ -68,7 +68,7 @@ input = desc_stat_par(input)
 #The number of rows are equal to the 3 betas times the number of countries
 output$acf = acf_val(output[["DL_coeff"]], input$acf)
 
-#It gives back the rewsult of stationarity tests
+#It gives back the results of stationarity tests
 output[['stationarity']][['test1_comm']] = stationarity_test(output[["raw_commodities"]][["crude"]])
 output[['stationarity']][['test1_DL']] = lapply(output[["DL_coeff"]], stationarity_test)
 
@@ -79,50 +79,38 @@ output[["raw_commodities"]][["crude"]] = apply_diff(output[["raw_commodities"]][
 #It converts factors to statinary ts if they are not stationary based on ADF
 output[["DL_coeff"]] = lapply(output[["DL_coeff"]], apply_diff)
 
+#It gives back the results of stationarity tests
+output[['stationarity']][['test2_comm']] = stationarity_test(output[["raw_commodities"]][["crude"]])
+output[['stationarity']][['test2_DL']] = lapply(output[["DL_coeff"]], stationarity_test)
+
+#Let's check the descriptives of analyzed variables
+output[['descriptives']][['comm']] = desc_stats(output[["raw_commodities"]][["crude"]])
+output[['descriptives']][['yield']] = lapply(output[['DL_coeff']], desc_stats)
+
+#It creates noe data frame from the factors and commodities
+output[['all_data']] = Reduce(my_merge, append(output[["raw_commodities"]], output[['DL_coeff']]))
+#Rename the columns
+colnames(output[['all_data']]) = row_names=c("crude", "gas", "gold", "silver", "al", "cop", "corn", "weat",
+                                             "GER0", "GER1","GER2","JPY0","JPY1","JPY2",
+                                             "AUS0", "AUS1", "AUS2", "US0", "US1", "US2",
+                                             "UK0", "UK1", "UK2", "FR0", "FR1", "FR2", "NOK0", "NOK01", "NOK2")
+
+source("C:/Users/Hp/Desktop/Master Thesis/code rewamp/func_analysis.R")
+input = TE_params(input)
+input = LG_params(input)
 
 
 
+plan(multiprocess)
+
+#Analysis for the whole period
+output[['res']][['all_time']] = complete_anal(output[['all_data']][,1:3], input$TE, input$granger_param)
 
 
+  
+  
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#It tests time series of factors to stationarity by PP, KPSS, ADF test
-factor_stat_test<-function(df_list){
-  df = data.frame(matrix(ncol=21,nrow = 3))
-  c= 1
-  for (i in 1:length(df_list)){
-    for (j in 1:3){ 
-      df[1,c] = pp.test(df_list[[i]][complete.cases(df_list[[i]]), j])[['p.value']] 
-      df[2,c] = kpss.test(df_list[[i]][complete.cases(df_list[[i]]), j])[['p.value']] 
-      df[3,c] = adf.test(df_list[[i]][complete.cases(df_list[[i]]), j])[['p.value']]
-      c = 1 + c
-    }
-    
-  }
-  df
-}
-
-
-output[['DL_stat_test']][['before']] = factor_stat_test(output[["DL_coeff"]])
-
-
-#It converts factors to statinary ts if they are not stationary based on ADF
-output[["DL_coeff"]]=factor_diff(output$DL_coeff)
-
-
+ 
 
 
 
@@ -158,57 +146,10 @@ input$split_dates = list(start0="2000-01-10", end0="2007-06-30",
 ###################################################################################
 ###############################   Descriptive statistics  ##########################
 
-#Giving back a dataframe about the most important descriptive statistics
-desc_stat<-function(data){
-  df2 <- data.frame(matrix(ncol = 16, nrow = 0))
-  for (i in 1:length(data)){
-    df2=rbind(df2,t(PerformanceAnalytics::table.Stats(output[["DL_coeff"]][[i]])))
-  }
-  df2
-}
-
-
-#Giving back acf for all df in a list
-acf_val<-function(data,acf){
-  df = data.frame(matrix(ncol = acf[["lags"]]+1, nrow = 0))
-  for (i in 1:length(data)){
-    for (j in 1:ncol(data[[i]])){
-      acf_df=t(as.data.frame(acf(data[[i]][,j], lag.max=acf[["lags"]], plot = F)[["acf"]]))
-      df = rbind(df,acf_df)
-    }
-  }
-  df
-}
 
 
 
-# Making 3 stationarity tests for lists of univariate time series: ADF, KPSS, PP
-# Return is equal to the p values of the tests
-# number of lags is equal to 5
-stationarity_tests<-function(data){
-  df = data.frame(matrix(ncol=3,nrow=0))
-  colnames(df)=c("ADF","KPSS","PP")
-  for (i in 1:length(data)){
-    adf=adf.test(data[[i]])[['type1']][[5,3]]
-    kpss=kpss.test(data[[i]])[1,2]
-    pp=pp.test(data[[i]])[1,3]
-    app_df = as.data.frame(list(adf,kpss,pp))
-    colnames(app_df)=c("ADF","KPSS","PP")
-    df = rbind(df,app_df)
-  }
-  colnames(df)=c("ADF","KPSS","PP")
-  df
-}
 
-
-# Take the first difference of all time series in a list
-# You can pick the order of diff
-time_diff<-function(df_list, differences=1){
-  for (i in 1:length(df_list)){
-    df_list[[i]] = diff(df_list[[i]], differences=differences)[-1,]
-  }
-  df_list
-}
 
 #Merging lists cosisting of data frames
 merger<-function(commodities, DL_coeff){
@@ -222,47 +163,7 @@ merger<-function(commodities, DL_coeff){
   merged
 }
 
-################################   Analysis   ######################
-
-#Calculate TE for all time series of a df
-#Giving back a matrix, One element is equal to 1 if the p-value is lass than a given value
-#If it is greater than the cell is equal to 0
-TE<- function(data, TE_param){
-  TE_results = matrix(0L, nrow = ncol(data), ncol = ncol(data))
-  for (i in 1:ncol(data)){
-    for (j in i:ncol(data)){
-      if (i != j){  
-      te = transfer_entropy(data[,i], data[,j], lx=TE_param[["lx"]], ly=TE_param[["ly"]], q=TE_param[["q"]],
-                              entropy = TE_param[["entropy"]], shuffles=TE_param[["shuffles"]], nboot=TE_param[["nboot"]],na.rm=T,quiet=T,burn=TE_param[['burn']])
-      TE_results[i,j] = te[["coef"]][1,4]
-      TE_results[j,i] = te[["coef"]][2,4]
-        }
-      }
-    }
-  colnames(TE_results)=colnames(data)
-  rownames(TE_results)=colnames(data)
-  TE_results
-}
-
-#Calculating Linear Granger Causality for all column of a df
-#Return is a matrix containing of 0 and 1
-#It is equal to 1 if p value is lass than a given value, otherwise the element is 0
-LG<-function(data, granger_param){
-  res =  matrix(0L, nrow = ncol(data), ncol = ncol(data))
-  for(i in 1:ncol(data)){
-    for (j in 1:ncol(data)){
-      if (i!=j){
-        lg1=grangertest(data[,i], data[,j], order = granger_param[["order"]])
-        lg2=grangertest(data[,j],data[,i], order = granger_param[["order"]])
-        res[i,j]=lg1[2,4]
-        res[j,i]=lg2[2,4]
-      }
-    }
-  }
-  colnames(res)=granger_param[["row_names"]]
-  rownames(res)=granger_param[["row_names"]]
-  res
-}
+######
 
 
 # Splitting the time series into two parts
@@ -275,71 +176,6 @@ split_ts=function(df_list, split_dates){
    new_df[["third"]][[i]]=window(df_list[[i]], start = as.Date(split_dates[["start2"]]), end = as.Date(split_dates[["end2"]]))
     }
   new_df
-}
-
-#it fits pairwise var model and gives back its residuals
-calc_var = function(x,y,p){
-  df = merge(x,y)
-  var.model = VAR(df, p = p, type = "none")
-  res_df=resid(var.model)
-  res_df
-}
-
-#Running transfer entropy on var filtered residuals
-var_TE=function(data,TE_param,p_var){
-  TE_results = matrix(0L, nrow = ncol(data), ncol = ncol(data))
-  for (i in 1:ncol(data)){
-    for (j in i:ncol(data)){
-      if (i != j){
-        df = calc_var(data[,i], data[,j],p_var)
-        te = transfer_entropy(df[,1], df[,2], lx=TE_param[["lx"]], ly=TE_param[["ly"]], q=TE_param[["q"]],
-                              entropy = TE_param[["entropy"]], shuffles=TE_param[["shuffles"]], nboot=TE_param[["nboot"]],na.rm=T,quiet=T,burn=TE_param[['burn']])
-        TE_results[i,j] = te[["coef"]][1,4]
-        TE_results[j,i] = te[["coef"]][2,4]
-      }      }
-  }
-  TE_results
-}
-
-#Calculating Granger causality for all variable
-var_LG = function(data, granger_param,p_var){
-  res =  matrix(0L, nrow = ncol(data), ncol = ncol(data))
-  for(i in 1:ncol(data)){
-    for (j in 1:ncol(data)){
-      if (i!=j){
-        df = calc_var(data[,i], data[,j],p_var)
-        lg1=grangertest(df[,1], df[,2], order = granger_param[["order"]])
-        lg2=grangertest(df[,2],df[,1], order = granger_param[["order"]])
-        res[i,j]=lg1[2,4]
-        res[j,i]=lg2[2,4]
-      }
-    }
-  }
-  colnames(res)=granger_param[["row_names"]]
-  rownames(res)=granger_param[["row_names"]]
-  res
-}
-
-#This function call TE and LG functions
-# Giving back 4 identity matrix: TE calculated from non-filterd and filtered data
-#Linear Granger Causalty calc. from non-filtered and filtered data
-complete_anal<-function(data1,data2, TE_param, granger_param, transfer = T){
-  merged = na.remove(merger(data1, data2))
-  if (transfer){
-    TE_mt=TE(merged,TE_param)
-    filt_TE = var_TE(merged,TE_param,TE_param[["lx"]])
-    filt_LG = var_LG(merged,granger_param,TE_param[["lx"]])
-    LG_mt=LG(merged,granger_param)
-    res = list(TE=TE_mt,LG=LG_mt,f_TE = filt_TE, f_LG = filt_LG)
-    res
-  }  
-  else{
-    filt_LG = var_LG(merged,granger_param,TE_param[["lx"]])
-    LG_mt=LG(merged,granger_param)
-    res = list(LG=LG_mt, f_LG = filt_LG)
-    res
-    
-  }
 }
 
 #USing rolling window tecnique to carry out the dynamic analysis

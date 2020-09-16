@@ -1,6 +1,5 @@
-
-#Define variables for the analysis
 desc_stat_par = function(input){
+  #Define variables for the analysis
   input$acf = list(lags = 5, 
                    row_names =c( "GER0", "GER1","GER2","JPY0","JPY1","JPY2",
                                  "AUS0", "AUS1", "AUS2", "US0", "US1", "US2",
@@ -28,9 +27,24 @@ acf_val<-function(data,acf){
 }
 
 
+desc_stats = function(data){
+  #It yields the basic descriptive statistics of a table
+  #min, median, mean, max, var
+
+  res = rbind(apply(na.omit(data), 2, min),
+              apply(na.omit(data), 2, median),
+              apply(na.omit(data), 2, mean),
+              apply(na.omit(data), 2, max),
+              apply(na.omit(data), 2, var))
+  row.names(res) = c('min', 'median', 'mean', 'max', 'var')
+  res
+}
 
 
 stationarity_test = function(df){
+  #It carries out KPSS, ADF and PP stationarity tests for all columns of a df
+  #Giving back only the p-value of tests
+  
   res = list()
   res$pp = apply(df, 2, pp.test)
   res$kpss = apply(df, 2, kpss.test)

@@ -1,15 +1,10 @@
-diff_params = function(input){
-  input[['diff']][['adf_test']] = output[["stationarity"]][["test1_comm"]][["adf"]]
-  input[['diff']][['sign_level']] = 0.05
-  input
-}
 
 check_and_diff = function(col, differ = 1, sign_level = 0.05){
   adf = adf.test(col)[['p.value']]
   if(adf > sign_level){
     col = as.vector(diff(zoo::zoo(col), na.pad=TRUE))
   }
-  col
+  col[-1]
 }
 
 
